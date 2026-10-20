@@ -1,385 +1,682 @@
-* {
-  box-sizing: border-box;
+import { jsPDF } from 'jspdf';
+import { Document, Packer, Paragraph, TextRun } from 'docx';
+
+const NOTES_KEY = 'notepad-pwa-note';
+const SETTINGS_KEY = 'notepad-pwa-settings';
+const SNAPSHOTS_KEY = 'notepad-pwa-snapshots';
+
+const editor = document.querySelector('#editor');
+const wordCountEl = document.querySelector('#word-count');
+const charCountEl = document.querySelector('#char-count');
+const paragraphCountEl = document.querySelector('#paragraph-count');
+const readingTimeEl = document.querySelector('#reading-time');
+const savedStatusEl = document.querySelector('#saved-status');
+const saveNoteBtn = document.querySelector('#save-note');
+const themeToggle = document.querySelector('#theme-toggle');
+const fullscreenBtn = document.querySelector('#fullscreen-btn');
+const floatWindowBtn = document.querySelector('#float-window-btn');
+const downloadBtn = document.querySelector('#download-btn');
+const saveSnapshotBtn = document.querySelector('#save-snapshot');
+const snapshotListEl = document.querySelector('#snapshot-list');
+const timerDisplayEl = document.querySelector('#timer-display');
+const startTimerBtn = document.querySelector('#start-timer');
+const pauseTimerBtn = document.querySelector('#pause-timer');
+const resetTimerBtn = document.querySelector('#reset-timer');
+const breakToggle = document.querySelector('#break-toggle');
+const typewriterToggle = document.querySelector('#typewriter-toggle');
+const installBtn = document.querySelector('#install-btn');
+const ambientListEl = document.querySelector('#ambient-list');
+const ambientStopBtn = document.querySelector('#ambient-stop');
+const ambientVolumeInput = document.querySelector('#ambient-volume');
+const toggleFocusBtn = document.querySelector('#toggle-focus');
+const toastEl = document.querySelector('#toast');
+
+let installPromptEvent = null;
+let timerIntervalId = null;
+let timerSeconds = 0;
+let timerRunning = false;
+let activeAmbientName = '';
+let audioContext = null;
+let ambientNodes = [];
+let userTheme = 'dark';
+let typewriterEnabled = false;
+let breakReminderEnabled = false;
+
+const ambientPatterns = ['Rain', 'Waves', 'Forest', 'Cafe', 'Fireplace', 'Fan', 'Storm', 'Piano'];
+
+function showToast(message) {
+  toastEl.textContent = message;
+  toastEl.classList.add('show');
+  clearTimeout(showToast.timeoutId);
+  showToast.timeoutId = setTimeout(() => toastEl.classList.remove('show'), 2200);
 }
 
-:root {
-  --bg: #f4f7fb;
-  --panel: rgba(255, 255, 255, 0.7);
-  --panel-strong: #ffffff;
-  --surface: #eef3ff;
-  --surface-border: rgba(15, 23, 42, 0.08);
-  --text: #0f172a;
-  --muted: #475569;
-  --primary: #2563eb;
-  --primary-soft: rgba(37, 99, 235, 0.12);
-  --warning: #f59e0b;
-  --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-  --radius: 18px;
-}
-
-body.dark {
-  --bg: #0b1020;
-  --panel: rgba(15, 23, 42, 0.78);
-  --panel-strong: #111827;
-  --surface: #111827;
-  --surface-border: rgba(148, 163, 184, 0.12);
-  --text: #e5eefb;
-  --muted: #a5b4cf;
-  --primary: #60a5fa;
-  --primary-soft: rgba(96, 165, 250, 0.15);
-  --warning: #fbbf24;
-  --shadow: 0 18px 40px rgba(2, 6, 23, 0.56);
-}
-
-html, body {
-  margin: 0;
-  width: 100%;
-  min-height: 100%;
-  background: var(--bg);
-  color: var(--text);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-
-body {
-  transition: background 0.2s ease, color 0.2s ease;
-}
-
-button, input, textarea {
-  font: inherit;
-}
-
-button {
-  border: 1px solid transparent;
-  background: var(--panel-strong);
-  color: var(--text);
-  border-radius: 10px;
-  padding: 0.7rem 1rem;
-  cursor: pointer;
-  transition: transform 0.15s ease, opacity 0.15s ease, border-color 0.15s ease;
-}
-
-button:hover {
-  transform: translateY(-1px);
-}
-
-button.primary {
-  background: var(--primary);
-  color: white;
-}
-
-button.ghost,
-button.small-button {
-  background: transparent;
-  border-color: var(--surface-border);
-}
-
-button.hidden {
-  display: none;
-}
-
-.app-shell {
-  display: grid;
-  grid-template-columns: 290px minmax(0, 1fr) 280px;
-  min-height: 100vh;
-  gap: 1rem;
-  padding: 1rem;
-}
-
-.sidebar,
-.tools-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--surface-border);
-  border-radius: var(--radius);
-  padding: 1rem;
-  backdrop-filter: blur(18px);
-  box-shadow: var(--shadow);
-}
-
-.brand-row {
-  background: var(--panel);
-  border: 1px solid var(--surface-border);
-  border-radius: var(--radius);
-  padding: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-  box-shadow: var(--shadow);
-}
-
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--primary), #38bdf8);
-  color: white;
-  font-size: 1.3rem;
-  font-weight: 700;
-}
-
-.brand-row h1,
-.panel h2 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.brand-row small,
-.panel-title-row,
-.setting-row,
-.stats-list li,
-.keyboard-panel li,
-.ambient-controls {
-  color: var(--muted);
-}
-
-.panel-title-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.75rem;
-}
-
-.stats-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.7rem;
-}
-
-.stats-list li {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.3rem 0;
-  border-bottom: 1px solid var(--surface-border);
-}
-
-.stats-list li:last-child {
-  border-bottom: 0;
-}
-
-.timer-display {
-  font-size: 1.8rem;
-  letter-spacing: 0.1em;
-  text-align: center;
-  margin: 0.5rem 0 1rem;
-  font-weight: 700;
-}
-
-.button-row {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.button-row.compact button {
-  flex: 1;
-}
-
-.button-stack {
-  display: grid;
-  gap: 0.5rem;
-}
-
-.setting-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  margin-top: 0.8rem;
-}
-
-.snapshot-list {
-  display: grid;
-  gap: 0.5rem;
-  max-height: 170px;
-  overflow: auto;
-}
-
-.snapshot-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.6rem 0.7rem;
-  border: 1px solid var(--surface-border);
-  border-radius: 10px;
-  background: rgba(148, 163, 184, 0.03);
-}
-
-.snapshot-item strong {
-  display: block;
-  font-size: 0.78rem;
-  color: var(--text);
-}
-
-.snapshot-item small {
-  color: var(--muted);
-}
-
-.snapshot-actions {
-  display: flex;
-  gap: 0.3rem;
-}
-
-.editor-area {
-  background: var(--panel);
-  border: 1px solid var(--surface-border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.topbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.9rem 1rem;
-  border-bottom: 1px solid var(--surface-border);
-  background: rgba(148, 163, 184, 0.03);
-}
-
-.topbar-left,
-.topbar-right {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.icon-button {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-}
-
-.editor-wrap {
-  flex: 1;
-  padding: 1rem;
-}
-
-#editor {
-  width: 100%;
-  height: 100%;
-  min-height: 72vh;
-  border: 1px solid var(--surface-border);
-  background: rgba(148, 163, 184, 0.02);
-  color: var(--text);
-  border-radius: 14px;
-  resize: none;
-  padding: 1rem;
-  line-height: 1.7;
-  font-size: 1.04rem;
-  outline: none;
-}
-
-#editor:focus {
-  border-color: rgba(59, 130, 246, 0.45);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
-}
-
-.ambient-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.ambient-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid var(--surface-border);
-  border-radius: 10px;
-  background: rgba(148, 163, 184, 0.02);
-  font-size: 0.84rem;
-  color: var(--text);
-}
-
-.ambient-item.active {
-  border-color: rgba(96, 165, 250, 0.46);
-  background: var(--primary-soft);
-}
-
-.ambient-controls {
-  display: grid;
-  gap: 0.65rem;
-}
-
-.keyboard-panel ul {
-  padding-left: 1rem;
-  margin: 0.5rem 0 0;
-  display: grid;
-  gap: 0.4rem;
-}
-
-kbd {
-  background: rgba(148, 163, 184, 0.1);
-  border: 1px solid var(--surface-border);
-  border-bottom-width: 2px;
-  border-radius: 6px;
-  padding: 0.15rem 0.35rem;
-  font-size: 0.8rem;
-}
-
-.toast {
-  position: fixed;
-  right: 1rem;
-  bottom: 1rem;
-  background: rgba(15, 23, 42, 0.9);
-  color: white;
-  border-radius: 10px;
-  padding: 0.8rem 1rem;
-  opacity: 0;
-  transform: translateY(10px);
-  pointer-events: none;
-  transition: all 0.2s ease;
-}
-
-.toast.show {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-body.focus-mode .sidebar,
-body.focus-mode .tools-panel,
-body.focus-mode .topbar {
-  display: none;
-}
-
-body.focus-mode .editor-area {
-  grid-column: 1 / -1;
-}
-
-body.focus-mode #editor {
-  min-height: calc(100vh - 2rem);
-}
-
-@media (max-width: 1100px) {
-  .app-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar,
-  .tools-panel {
-    order: 2;
-  }
-
-  .editor-area {
-    order: 1;
+function readSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    return raw ? { ...defaultSettings(), ...JSON.parse(raw) } : defaultSettings();
+  } catch {
+    return defaultSettings();
   }
 }
+
+function defaultSettings() {
+  return {
+    darkMode: true,
+    breakReminder: false,
+    typewriterSound: false,
+    focusMode: false,
+    ambientVolume: 45,
+    ambientSound: '',
+  };
+}
+
+function saveSettings(settings) {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+function loadNote() {
+  const note = localStorage.getItem(NOTES_KEY) ?? '';
+  editor.value = note;
+  updateStats();
+  updateSavedStatus();
+}
+
+function saveNote() {
+  localStorage.setItem(NOTES_KEY, editor.value);
+  updateSavedStatus();
+}
+
+function updateSavedStatus() {
+  const now = new Date();
+  savedStatusEl.textContent = `Saved ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function updateStats() {
+  const text = editor.value;
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const chars = text.length;
+  const paragraphs = text.trim() ? text.split(/\n\s*\n/).filter(Boolean).length : 0;
+  const estimatedMinutes = Math.max(1, Math.ceil(words / 200));
+
+  wordCountEl.textContent = String(words);
+  charCountEl.textContent = String(chars);
+  paragraphCountEl.textContent = String(paragraphs);
+  readingTimeEl.textContent = `${estimatedMinutes} min`;
+}
+
+function applyTheme(theme) {
+  userTheme = theme;
+  document.body.classList.toggle('dark', theme === 'dark');
+  saveSettings({ ...readSettings(), darkMode: theme === 'dark' });
+}
+
+function toggleTheme() {
+  applyTheme(userTheme === 'dark' ? 'light' : 'dark');
+  showToast(userTheme === 'dark' ? 'Dark mode off' : 'Dark mode on');
+}
+
+function toggleFocusMode() {
+  const shouldFocus = !document.body.classList.contains('focus-mode');
+  document.body.classList.toggle('focus-mode', shouldFocus);
+  const settings = readSettings();
+  settings.focusMode = shouldFocus;
+  saveSettings(settings);
+  showToast(shouldFocus ? 'Focus mode on' : 'Focus mode off');
+}
+
+function formatTimer(totalSeconds) {
+  const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+  const seconds = String(totalSeconds % 60).padStart(2, '0');
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+function updateTimerDisplay() {
+  timerDisplayEl.textContent = formatTimer(timerSeconds);
+}
+
+function startTimer() {
+  if (timerRunning) return;
+  timerRunning = true;
+  timerIntervalId = window.setInterval(() => {
+    timerSeconds += 1;
+    updateTimerDisplay();
+
+    if (breakReminderEnabled && timerSeconds > 0 && timerSeconds % 1800 === 0) {
+      showToast('Break reminder: stand up, stretch, and breathe.');
+    }
+  }, 1000);
+}
+
+function pauseTimer() {
+  timerRunning = false;
+  window.clearInterval(timerIntervalId);
+}
+
+function resetTimer() {
+  pauseTimer();
+  timerSeconds = 0;
+  updateTimerDisplay();
+}
+
+function getSnapshots() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SNAPSHOTS_KEY) ?? '[]');
+    return Array.isArray(raw) ? raw : [];
+  } catch {
+    return [];
+  }
+}
+
+function setSnapshots(items) {
+  localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(items));
+}
+
+function renderSnapshots() {
+  const snapshots = getSnapshots();
+  snapshotListEl.innerHTML = '';
+
+  if (!snapshots.length) {
+    snapshotListEl.innerHTML = '<div class="snapshot-item empty"><div><strong>No snapshots yet</strong><small>Save a revision to recover it later.</small></div></div>';
+    return;
+  }
+
+  snapshots.slice(0, 8).forEach((entry) => {
+    const item = document.createElement('div');
+    item.className = 'snapshot-item';
+    item.innerHTML = `
+      <div>
+        <strong>${entry.label}</strong>
+        <small>${new Date(entry.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</small>
+      </div>
+      <div class="snapshot-actions">
+        <button class="small-button" type="button" data-restore="${entry.id}">Use</button>
+        <button class="small-button ghost" type="button" data-delete="${entry.id}">×</button>
+      </div>
+    `;
+    snapshotListEl.appendChild(item);
+  });
+}
+
+function saveSnapshot() {
+  const snapshots = getSnapshots();
+  const now = Date.now();
+  snapshots.unshift({
+    id: `snap-${now}`,
+    label: `Snapshot ${snapshots.length + 1}`,
+    createdAt: new Date().toISOString(),
+    content: editor.value,
+  });
+  setSnapshots(snapshots.slice(0, 12));
+  renderSnapshots();
+  showToast('Snapshot saved');
+}
+
+function restoreSnapshot(id) {
+  const found = getSnapshots().find((entry) => entry.id === id);
+  if (!found) return;
+  editor.value = found.content;
+  saveNote();
+  updateStats();
+  showToast('Snapshot restored');
+}
+
+function deleteSnapshot(id) {
+  const snapshots = getSnapshots().filter((entry) => entry.id !== id);
+  setSnapshots(snapshots);
+  renderSnapshots();
+}
+
+function toggleBreakReminder() {
+  breakReminderEnabled = breakToggle.checked;
+  const settings = readSettings();
+  settings.breakReminder = breakReminderEnabled;
+  saveSettings(settings);
+  showToast(breakReminderEnabled ? 'Break reminders on' : 'Break reminders off');
+}
+
+function toggleTypewriter() {
+  typewriterEnabled = typewriterToggle.checked;
+  const settings = readSettings();
+  settings.typewriterSound = typewriterEnabled;
+  saveSettings(settings);
+  showToast(typewriterEnabled ? 'Typewriter sound on' : 'Typewriter sound off');
+}
+
+function triggerTypewriterTone() {
+  if (!typewriterEnabled) return;
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtor) return;
+
+  if (!audioContext) {
+    audioContext = new AudioCtor();
+  }
+
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  oscillator.type = 'square';
+  oscillator.frequency.value = 420;
+  gain.gain.value = 0.012;
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + 0.03);
+}
+
+function createNoiseBuffer(ctx, durationSeconds) {
+  const sampleRate = ctx.sampleRate;
+  const frameCount = sampleRate * durationSeconds;
+  const buffer = ctx.createBuffer(1, frameCount, sampleRate);
+  const channel = buffer.getChannelData(0);
+
+  for (let i = 0; i < frameCount; i += 1) {
+    channel[i] = (Math.random() * 2 - 1) * 0.12;
+  }
+
+  return buffer;
+}
+
+function stopAmbient() {
+  ambientNodes.forEach(({ source, gain, lfo, lfoGain, master }) => {
+    try {
+      if (source && source.stop) source.stop();
+    } catch {}
+    if (gain) gain.disconnect();
+    if (lfo) lfo.stop();
+    if (lfoGain) lfoGain.disconnect();
+    if (master) master.disconnect();
+  });
+  ambientNodes = [];
+
+  if (audioContext) {
+    audioContext.close();
+    audioContext = null;
+  }
+
+  activeAmbientName = '';
+  renderAmbientButtons();
+}
+
+function startAmbient(name) {
+  if (activeAmbientName === name) {
+    stopAmbient();
+    return;
+  }
+
+  activeAmbientName = name;
+  const settings = readSettings();
+  settings.ambientSound = name;
+  saveSettings(settings);
+
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtor) {
+    showToast('Ambient audio is unavailable in this browser.');
+    return;
+  }
+
+  if (!audioContext) {
+    audioContext = new AudioCtor();
+  }
+
+  const ctx = audioContext;
+  const master = ctx.createGain();
+  master.gain.value = Number(ambientVolumeInput.value) / 100 * 0.18;
+  master.connect(ctx.destination);
+
+  const noiseSource = ctx.createBufferSource();
+  noiseSource.buffer = createNoiseBuffer(ctx, 2.5);
+  noiseSource.loop = true;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 800;
+
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.value = 0.02;
+
+  noiseSource.connect(filter);
+  filter.connect(noiseGain);
+  noiseGain.connect(master);
+  noiseSource.start();
+
+  ambientNodes.push({ source: noiseSource, gain: noiseGain, master });
+
+  if (name === 'Rain') {
+    filter.frequency.value = 1200;
+    noiseGain.gain.value = 0.028;
+  }
+
+  if (name === 'Waves') {
+    const osc = ctx.createOscillator();
+    const oscGain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 90;
+    oscGain.gain.value = 0.02;
+    osc.connect(oscGain);
+    oscGain.connect(master);
+    osc.start();
+    ambientNodes.push({ source: osc, gain: oscGain, master });
+  }
+
+  if (name === 'Forest') {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = 180;
+    gain.gain.value = 0.018;
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start();
+    ambientNodes.push({ source: osc, gain, master });
+  }
+
+  if (name === 'Cafe') {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.value = 140;
+    gain.gain.value = 0.013;
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start();
+    ambientNodes.push({ source: osc, gain, master });
+  }
+
+  if (name === 'Fireplace') {
+    filter.type = 'bandpass';
+    filter.frequency.value = 350;
+    noiseGain.gain.value = 0.026;
+  }
+
+  if (name === 'Fan') {
+    const osc = ctx.createOscillator();
+    const oscGain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.value = 64;
+    oscGain.gain.value = 0.016;
+    osc.connect(oscGain);
+    oscGain.connect(master);
+    osc.start();
+    ambientNodes.push({ source: osc, gain: oscGain, master });
+  }
+
+  if (name === 'Storm') {
+    filter.frequency.value = 600;
+    noiseGain.gain.value = 0.035;
+    const osc = ctx.createOscillator();
+    const oscGain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.value = 52;
+    oscGain.gain.value = 0.018;
+    osc.connect(oscGain);
+    oscGain.connect(master);
+    osc.start();
+    ambientNodes.push({ source: osc, gain: oscGain, master });
+  }
+
+  if (name === 'Piano') {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = 330;
+    gain.gain.value = 0.02;
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start();
+    ambientNodes.push({ source: osc, gain, master });
+  }
+
+  renderAmbientButtons();
+}
+
+function renderAmbientButtons() {
+  ambientListEl.innerHTML = '';
+
+  ambientPatterns.forEach((name) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `ambient-item${name === activeAmbientName ? ' active' : ''}`;
+    button.textContent = name;
+    button.addEventListener('click', () => {
+      if (name === activeAmbientName) {
+        stopAmbient();
+        return;
+      }
+      startAmbient(name);
+    });
+    ambientListEl.appendChild(button);
+  });
+}
+
+function adjustAmbientVolume() {
+  const volume = Number(ambientVolumeInput.value) / 100;
+  ambientNodes.forEach(({ gain, master }) => {
+    if (gain) {
+      gain.gain.value = volume * 0.18;
+    }
+    if (master) {
+      master.gain.value = volume * 0.18;
+    }
+  });
+
+  const settings = readSettings();
+  settings.ambientVolume = Number(ambientVolumeInput.value);
+  saveSettings(settings);
+}
+
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportNote(type) {
+  const content = editor.value || 'Start writing...';
+
+  if (type === 'txt') {
+    downloadBlob(new Blob([content], { type: 'text/plain;charset=utf-8' }), 'note.txt');
+    showToast('TXT exported');
+    return;
+  }
+
+  if (type === 'html') {
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Note</title></head><body>${content.replace(/\n/g, '<br>')}</body></html>`;
+    downloadBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), 'note.html');
+    showToast('HTML exported');
+    return;
+  }
+
+  if (type === 'pdf') {
+    const pdf = new jsPDF();
+    const lines = pdf.splitTextToSize(content, 180);
+    pdf.text(lines, 14, 20);
+    pdf.save('note.pdf');
+    showToast('PDF exported');
+    return;
+  }
+
+  if (type === 'docx') {
+    const doc = new Document({
+      sections: [{
+        children: [new Paragraph({ children: [new TextRun(content || 'Start writing...')] })]
+      }]
+    });
+
+    Packer.toBlob(doc).then((blob) => {
+      downloadBlob(blob, 'note.docx');
+      showToast('DOCX exported');
+    });
+  }
+}
+
+async function installApp() {
+  if (!installPromptEvent) {
+    showToast('Use the browser menu to install this app.');
+    return;
+  }
+
+  installPromptEvent.prompt();
+  await installPromptEvent.userChoice;
+  installPromptEvent = null;
+  installBtn.classList.add('hidden');
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => showToast('Fullscreen is not supported here.'));
+  } else {
+    document.exitFullscreen();
+  }
+}
+
+function openFloatingWindow() {
+  const win = window.open('', 'notepad-floating', 'popup,width=420,height=560');
+  if (!win) {
+    showToast('Allow popups to use floating mode.');
+    return;
+  }
+
+  const escaped = editor.value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Notepad Floating</title><style>body{font-family:system-ui,sans-serif;background:#111827;color:#e2e8f0;padding:18px;line-height:1.7}textarea{width:100%;height:82vh;border:1px solid rgba(148,163,184,.2);border-radius:12px;padding:12px;background:#0f172a;color:#f8fafc;resize:none}</style></head><body><textarea>${escaped}</textarea></body></html>`);
+  win.document.close();
+}
+
+function handleKeyboardShortcuts(event) {
+  const modifier = event.metaKey || event.ctrlKey;
+  const key = event.key.toLowerCase();
+
+  if (modifier && key === 's') {
+    event.preventDefault();
+    saveNote();
+    showToast('Saved locally');
+  }
+
+  if (modifier && event.shiftKey && key === 'l') {
+    event.preventDefault();
+    toggleTheme();
+  }
+
+  if (modifier && event.shiftKey && key === 'f') {
+    event.preventDefault();
+    toggleFocusMode();
+  }
+
+  if (modifier && event.shiftKey && key === 'd') {
+    event.preventDefault();
+    exportNote('pdf');
+  }
+}
+
+function initInstallPrompt() {
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    installPromptEvent = event;
+    installBtn.classList.remove('hidden');
+  });
+
+  window.addEventListener('appinstalled', () => {
+    installBtn.classList.add('hidden');
+    showToast('App installed');
+  });
+}
+
+function initListeners() {
+  editor.addEventListener('input', () => {
+    updateStats();
+    saveNote();
+  });
+
+  editor.addEventListener('keydown', (event) => {
+    handleKeyboardShortcuts(event);
+
+    if (typewriterEnabled && (event.key.length === 1 || ['Backspace', 'Enter', ' ', 'Tab'].includes(event.key))) {
+      triggerTypewriterTone();
+    }
+  });
+
+  saveNoteBtn.addEventListener('click', () => {
+    saveNote();
+    showToast('Saved locally');
+  });
+
+  themeToggle.addEventListener('click', toggleTheme);
+  fullscreenBtn.addEventListener('click', toggleFullscreen);
+  floatWindowBtn.addEventListener('click', openFloatingWindow);
+  toggleFocusBtn.addEventListener('click', toggleFocusMode);
+  downloadBtn.addEventListener('click', () => exportNote('pdf'));
+  document.querySelector('#export-text').addEventListener('click', () => exportNote('txt'));
+  document.querySelector('#export-html').addEventListener('click', () => exportNote('html'));
+  document.querySelector('#export-pdf').addEventListener('click', () => exportNote('pdf'));
+  document.querySelector('#export-docx').addEventListener('click', () => exportNote('docx'));
+
+  saveSnapshotBtn.addEventListener('click', saveSnapshot);
+  snapshotListEl.addEventListener('click', (event) => {
+    const restoreButton = event.target.closest('[data-restore]');
+    const deleteButton = event.target.closest('[data-delete]');
+
+    if (restoreButton) restoreSnapshot(restoreButton.dataset.restore);
+    if (deleteButton) deleteSnapshot(deleteButton.dataset.delete);
+  });
+
+  startTimerBtn.addEventListener('click', startTimer);
+  pauseTimerBtn.addEventListener('click', pauseTimer);
+  resetTimerBtn.addEventListener('click', resetTimer);
+
+  breakToggle.addEventListener('change', toggleBreakReminder);
+  typewriterToggle.addEventListener('change', toggleTypewriter);
+  ambientStopBtn.addEventListener('click', stopAmbient);
+  ambientVolumeInput.addEventListener('input', adjustAmbientVolume);
+  installBtn.addEventListener('click', installApp);
+
+  window.addEventListener('keydown', handleKeyboardShortcuts);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveNote();
+  });
+}
+
+function initSettings() {
+  const settings = readSettings();
+  userTheme = settings.darkMode ? 'dark' : 'light';
+  breakReminderEnabled = settings.breakReminder;
+  typewriterEnabled = settings.typewriterSound;
+  breakToggle.checked = settings.breakReminder;
+  typewriterToggle.checked = settings.typewriterSound;
+  ambientVolumeInput.value = String(settings.ambientVolume ?? 45);
+  document.body.classList.toggle('dark', userTheme === 'dark');
+  document.body.classList.toggle('focus-mode', settings.focusMode);
+
+  if (settings.ambientSound) {
+    activeAmbientName = settings.ambientSound;
+    renderAmbientButtons();
+    startAmbient(settings.ambientSound);
+  } else {
+    renderAmbientButtons();
+  }
+}
+
+function initApp() {
+  loadNote();
+  renderSnapshots();
+  initSettings();
+  updateTimerDisplay();
+  initListeners();
+  initInstallPrompt();
+}
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+
+initApp();

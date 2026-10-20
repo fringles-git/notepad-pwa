@@ -1,834 +1,406 @@
-import { jsPDF } from 'jspdf';
-import { Document, Packer, Paragraph, TextRun } from 'docx';
-
-const NOTES_KEY = 'notepad-pwa-note';
-const SETTINGS_KEY = 'notepad-pwa-settings';
-const SNAPSHOTS_KEY = 'notepad-pwa-snapshots';
-
-const editor = document.querySelector('#editor');
-const wordCountEl = document.querySelector('#word-count');
-const charCountEl = document.querySelector('#char-count');
-const paragraphCountEl = document.querySelector('#paragraph-count');
-const readingTimeEl = document.querySelector('#reading-time');
-const savedStatusEl = document.querySelector('#saved-status');
-const saveNoteBtn = document.querySelector('#save-note');
-const themeToggle = document.querySelector('#theme-toggle');
-const fullscreenBtn = document.querySelector('#fullscreen-btn');
-const floatWindowBtn = document.querySelector('#float-window-btn');
-const downloadBtn = document.querySelector('#download-btn');
-const saveSnapshotBtn = document.querySelector('#save-snapshot');
-const snapshotListEl = document.querySelector('#snapshot-list');
-const timerDisplayEl = document.querySelector('#timer-display');
-const startTimerBtn = document.querySelector('#start-timer');
-const pauseTimerBtn = document.querySelector('#pause-timer');
-const resetTimerBtn = document.querySelector('#reset-timer');
-const breakToggle = document.querySelector('#break-toggle');
-const typewriterToggle = document.querySelector('#typewriter-toggle');
-const installBtn = document.querySelector('#install-btn');
-const ambientListEl = document.querySelector('#ambient-list');
-const ambientStopBtn = document.querySelector('#ambient-stop');
-const ambientVolumeInput = document.querySelector('#ambient-volume');
-const toggleFocusBtn = document.querySelector('#toggle-focus');
-const toastEl = document.querySelector('#toast');
-
-let installPromptEvent = null;
-let timerInterval = null;
-let timerSeconds = 0;
-let timerRunning = false;
-let breakReminderEnabled = false;
-let themeMode = 'dark';
-let ambientAudioCtx = null;
-let ambientNodes = [];
-let ambientName = '';
-let clickAudioCtx = null;
-
-const ambientPatterns = [
-  'Rain', 'Waves', 'Forest', 'Cafe', 'Fireplace', 'Fan', 'Thunder', 'Night',
-  'River', 'Piano', 'Wind', 'Stream', 'Train', 'Campfire', 'Breeze', 'Storm',
-  'Chimes', 'Drone', 'Hush', 'Cicadas', 'Desk', 'Moonlight', 'Aurora', 'Meadow', 'Harbor'
-];
-
-function showToast(message) {
-  toastEl.textContent = message;
-  toastEl.classList.add('show');
-  clearTimeout(showToast.timeoutId);
-  showToast.timeoutId = setTimeout(() => toastEl.classList.remove('show'), 2000);
+* {
+  box-sizing: border-box;
 }
 
-function getDefaultSettings() {
-  return {
-    darkMode: true,
-    breakReminder: false,
-    typewriterSound: false,
-    lastSaved: new Date().toISOString(),
-    ambientSound: '',
-    ambientVolume: 45,
-    focusMode: false,
-  };
+:root {
+  --bg: #f3f7ff;
+  --panel: rgba(255, 255, 255, 0.72);
+  --panel-strong: #ffffff;
+  --surface: #eef4ff;
+  --surface-border: rgba(15, 23, 42, 0.08);
+  --text: #0f172a;
+  --muted: #4b5d79;
+  --primary: #2563eb;
+  --primary-soft: rgba(37, 99, 235, 0.12);
+  --shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
+  --radius: 18px;
 }
 
-function readSettings() {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    return raw ? { ...getDefaultSettings(), ...JSON.parse(raw) } : getDefaultSettings();
-  } catch {
-    return getDefaultSettings();
+body.dark {
+  --bg: #090d18;
+  --panel: rgba(15, 23, 42, 0.76);
+  --panel-strong: #111827;
+  --surface: #0b1220;
+  --surface-border: rgba(148, 163, 184, 0.12);
+  --text: #e5eefb;
+  --muted: #a5b4cf;
+  --primary: #60a5fa;
+  --primary-soft: rgba(96, 165, 250, 0.14);
+  --shadow: 0 20px 52px rgba(2, 6, 23, 0.58);
+}
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, "Segoe UI", sans-serif;
+}
+
+body {
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+button, input, textarea {
+  font: inherit;
+}
+
+button {
+  appearance: none;
+  border: 1px solid var(--surface-border);
+  background: var(--panel-strong);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 0.72rem 1rem;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease, border-color 0.15s ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+button.primary {
+  background: linear-gradient(135deg, var(--primary), #3790ff);
+  border-color: transparent;
+  color: white;
+}
+
+button.ghost,
+button.small-button {
+  background: transparent;
+}
+
+button.hidden {
+  display: none;
+}
+
+textarea, input {
+  accent-color: var(--primary);
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 295px minmax(0, 1fr) 290px;
+  gap: 1rem;
+  min-height: 100vh;
+  padding: 1rem;
+}
+
+.sidebar,
+.tools-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.brand-row,
+.panel,
+.editor-area {
+  background: var(--panel);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(16px);
+}
+
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1rem 1.1rem;
+}
+
+.brand-mark {
+  width: 2.7rem;
+  height: 2.7rem;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--primary), #38bdf8);
+  color: white;
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.brand-row h1,
+.panel h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.brand-row small,
+.setting-row,
+.stats-list li,
+.snapshot-item small,
+.keyboard-panel li,
+.slider-wrap {
+  color: var(--muted);
+}
+
+.panel {
+  padding: 1rem;
+}
+
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.8rem;
+}
+
+.stats-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.stats-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.28rem 0;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.stats-list li:last-child {
+  border-bottom: none;
+}
+
+.timer-display {
+  margin: 0.5rem 0 1rem;
+  text-align: center;
+  font-size: clamp(1.6rem, 2vw, 2.2rem);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.button-row,
+.button-stack,
+.topbar-left,
+.topbar-right,
+.snapshot-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.button-row.compact {
+  flex-wrap: wrap;
+}
+
+.button-row.compact > * {
+  flex: 1;
+}
+
+.button-stack {
+  flex-direction: column;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.8rem;
+}
+
+.setting-row input {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.snapshot-list {
+  display: grid;
+  gap: 0.55rem;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.snapshot-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.04);
+}
+
+.snapshot-item.empty {
+  display: block;
+}
+
+.snapshot-item strong {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
+.snapshot-actions {
+  align-items: center;
+}
+
+.editor-area {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid var(--surface-border);
+  background: rgba(148, 163, 184, 0.02);
+}
+
+.icon-button {
+  width: 2.55rem;
+  height: 2.55rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+}
+
+.editor-wrap {
+  flex: 1;
+  padding: 1rem;
+}
+
+#editor {
+  width: 100%;
+  min-height: 72vh;
+  height: 100%;
+  border: 1px solid var(--surface-border);
+  background: rgba(148, 163, 184, 0.02);
+  color: var(--text);
+  border-radius: 16px;
+  padding: 1rem;
+  resize: none;
+  font-size: 1.04rem;
+  line-height: 1.7;
+  outline: none;
+}
+
+#editor:focus {
+  border-color: rgba(59, 130, 246, 0.45);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.ambient-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.ambient-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.5rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.025);
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+.ambient-item.active {
+  border-color: rgba(96, 165, 250, 0.46);
+  background: var(--primary-soft);
+}
+
+.slider-wrap {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.slider-wrap input {
+  width: 100%;
+}
+
+.keyboard-panel ul {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.65rem 0 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+kbd {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid var(--surface-border);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  padding: 0.12rem 0.35rem;
+  font-size: 0.8rem;
+}
+
+.toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  background: rgba(15, 23, 42, 0.94);
+  color: white;
+  border-radius: 10px;
+  padding: 0.75rem 0.95rem;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+body.focus-mode .sidebar,
+body.focus-mode .tools-panel,
+body.focus-mode .topbar {
+  display: none;
+}
+
+body.focus-mode .editor-area {
+  grid-column: 1 / -1;
+}
+
+body.focus-mode #editor {
+  min-height: calc(100vh - 2rem);
+}
+
+@media (max-width: 1100px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar,
+  .tools-panel {
+    order: 2;
+  }
+
+  .editor-area {
+    order: 1;
   }
 }
 
-function saveSettings(next) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
-}
-
-function updateTheme() {
-  document.body.classList.toggle('dark', themeMode === 'dark');
-  saveSettings({ ...readSettings(), darkMode: themeMode === 'dark' });
-}
-
-function updateStats() {
-  const text = editor.value;
-  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-  const chars = text.length;
-  const paragraphs = text ? text.split(/\n\s*\n/).filter(Boolean).length : 0;
-  const minutes = Math.max(1, Math.ceil(words / 200));
-
-  wordCountEl.textContent = words.toString();
-  charCountEl.textContent = chars.toString();
-  paragraphCountEl.textContent = paragraphs.toString();
-  readingTimeEl.textContent = `${minutes} min`;
-}
-
-function saveCurrentNote() {
-  localStorage.setItem(NOTES_KEY, editor.value);
-  const timestamp = new Date();
-  savedStatusEl.textContent = `Saved ${timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-  const settings = readSettings();
-  settings.lastSaved = timestamp.toISOString();
-  saveSettings(settings);
-}
-
-function loadCurrentNote() {
-  const note = localStorage.getItem(NOTES_KEY) ?? '';
-  editor.value = note;
-  updateStats();
-}
-
-function loadSnapshots() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(SNAPSHOTS_KEY) ?? '[]');
-    return Array.isArray(raw) ? raw : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistSnapshots(snapshots) {
-  localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snapshots));
-}
-
-function renderSnapshots() {
-  const snapshots = loadSnapshots();
-  snapshotListEl.innerHTML = '';
-
-  if (!snapshots.length) {
-    snapshotListEl.innerHTML = '<div class="snapshot-item"><div><strong>No snapshots yet</strong><small>Your note versions will appear here.</small></div></div>';
-    return;
+@media (max-width: 560px) {
+  .app-shell {
+    padding: 0.75rem;
   }
 
-  snapshots.slice(0, 8).forEach((entry) => {
-    const item = document.createElement('div');
-    item.className = 'snapshot-item';
-    item.innerHTML = `
-      <div>
-        <strong>${entry.label}</strong>
-        <small>${new Date(entry.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</small>
-      </div>
-      <div class="snapshot-actions">
-        <button data-restore="${entry.id}" class="small-button">Use</button>
-        <button data-delete="${entry.id}" class="small-button ghost">×</button>
-      </div>
-    `;
-    snapshotListEl.appendChild(item);
-  });
-}
-
-function saveSnapshot() {
-  const snapshots = loadSnapshots();
-  const timestamp = Date.now();
-  const entry = {
-    id: `snap-${timestamp}`,
-    label: `Snapshot ${snapshots.length + 1}`,
-    createdAt: new Date().toISOString(),
-    content: editor.value,
-  };
-  snapshots.unshift(entry);
-  persistSnapshots(snapshots.slice(0, 10));
-  renderSnapshots();
-  showToast('Snapshot saved');
-}
-
-function restoreSnapshot(snapshotId) {
-  const snapshots = loadSnapshots();
-  const selected = snapshots.find((item) => item.id === snapshotId);
-  if (!selected) return;
-  editor.value = selected.content;
-  saveCurrentNote();
-  updateStats();
-  showToast('Snapshot restored');
-}
-
-function deleteSnapshot(snapshotId) {
-  const snapshots = loadSnapshots().filter((item) => item.id !== snapshotId);
-  persistSnapshots(snapshots);
-  renderSnapshots();
-}
-
-function formatTimer(totalSeconds) {
-  const hours = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
-  const minutes = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
-  const seconds = (totalSeconds % 60).toString().padStart(2, '0');
-  return `${hours}:${minutes}:${seconds}`;
-}
-
-function updateTimerDisplay() {
-  timerDisplayEl.textContent = formatTimer(timerSeconds);
-}
-
-function startTimer() {
-  if (timerRunning) return;
-  timerRunning = true;
-  timerInterval = setInterval(() => {
-    timerSeconds += 1;
-    updateTimerDisplay();
-
-    if (breakReminderEnabled && timerSeconds > 0 && timerSeconds % 1800 === 0) {
-      showToast('Break reminder: stand up, stretch, and breathe.');
-    }
-  }, 1000);
-}
-
-function pauseTimer() {
-  timerRunning = false;
-  clearInterval(timerInterval);
-}
-
-function resetTimer() {
-  pauseTimer();
-  timerSeconds = 0;
-  updateTimerDisplay();
-}
-
-function toggleDarkMode() {
-  themeMode = themeMode === 'dark' ? 'light' : 'dark';
-  updateTheme();
-}
-
-function toggleFocusMode() {
-  const isFocused = document.body.classList.toggle('focus-mode');
-  const settings = readSettings();
-  settings.focusMode = isFocused;
-  saveSettings(settings);
-}
-
-function openFloatingNoteWindow() {
-  const newWindow = window.open('', 'notepad-float', 'popup,width=420,height=560');
-  if (!newWindow) {
-    showToast('Popup blocked. Allow popups for floating mode.');
-    return;
+  .topbar {
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 
-  newWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Notepad Floating</title><style>body{font-family:system-ui,sans-serif;padding:18px;background:#111827;color:#e5eefb;line-height:1.7}textarea{width:100%;height:82vh;resize:none;border-radius:12px;padding:14px;background:#0f172a;color:#fff;border:1px solid rgba(148,163,184,.2)}button{margin-top:12px}</style></head><body><textarea>${escapeHtml(editor.value)}</textarea></body></html>`);
-  newWindow.document.close();
-}
-
-function escapeHtml(value) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function toggleFullScreen() {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(() => showToast('Fullscreen is unavailable here.'));
-    return;
+  .ambient-list {
+    grid-template-columns: 1fr;
   }
-  document.exitFullscreen();
-}
-
-function applySettingsOnLoad() {
-  const settings = readSettings();
-  themeMode = settings.darkMode ? 'dark' : 'light';
-  breakReminderEnabled = settings.breakReminder;
-  breakToggle.checked = settings.breakReminder;
-  typewriterToggle.checked = settings.typewriterSound;
-  ambientVolumeInput.value = String(settings.ambientVolume ?? 45);
-  document.body.classList.toggle('focus-mode', Boolean(settings.focusMode));
-  updateTheme();
-}
-
-function saveNoteWithShortcut(event) {
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-    event.preventDefault();
-    saveCurrentNote();
-    showToast('Saved locally');
-  }
-
-  if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'l') {
-    event.preventDefault();
-    toggleDarkMode();
-  }
-
-  if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
-    event.preventDefault();
-    toggleFocusMode();
-  }
-
-  if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'd') {
-    event.preventDefault();
-    exportNote('pdf');
-  }
-}
-
-function playTypewriterTone() {
-  const settings = readSettings();
-  if (!settings.typewriterSound) return;
-
-  const AudioCtor = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtor) return;
-  const ctx = clickAudioCtx ?? new AudioCtor();
-  clickAudioCtx = ctx;
-  const oscillator = ctx.createOscillator();
-  const gain = ctx.createGain();
-  oscillator.type = 'square';
-  oscillator.frequency.value = 480;
-  gain.gain.value = 0.015;
-  oscillator.connect(gain);
-  gain.connect(ctx.destination);
-  oscillator.start();
-  oscillator.stop(ctx.currentTime + 0.03);
-}
-
-function createAmbientPreset(name) {
-  const baseGain = 0.08;
-  return {
-    name,
-    start() {
-      if (ambientAudioCtx === null) {
-        const AudioCtor = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtor) return;
-        ambientAudioCtx = new AudioCtor();
-      }
-
-      const ctx = ambientAudioCtx;
-      const master = ctx.createGain();
-      master.gain.value = Number(ambientVolumeInput.value) / 100 * 0.14;
-      master.connect(ctx.destination);
-
-      if (name === 'Rain') {
-        const noise = createNoiseBuffer(ctx, 0.2);
-        const source = ctx.createBufferSource();
-        source.buffer = noise;
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = 1200;
-        const gain = ctx.createGain();
-        gain.gain.value = baseGain;
-        source.connect(filter);
-        filter.connect(gain);
-        gain.connect(master);
-        source.loop = true;
-        source.start();
-        ambientNodes.push({ source, gain, master });
-      }
-
-      if (name === 'Ocean' || name === 'Waves') {
-        const osc = ctx.createOscillator();
-        const lfo = ctx.createOscillator();
-        const gain = ctx.createGain();
-        const lfoGain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = 100;
-        lfo.frequency.value = 0.25;
-        lfoGain.gain.value = 35;
-        lfo.connect(lfoGain);
-        lfoGain.connect(osc.frequency);
-        gain.gain.value = 0.03;
-        osc.connect(gain);
-        gain.connect(master);
-        osc.start();
-        lfo.start();
-        ambientNodes.push({ source: osc, gain, master, lfo, lfoGain });
-      }
-
-      if (name === 'Forest' || name === 'Meadow') {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.value = 220;
-        gain.gain.value = 0.02;
-        osc.connect(gain);
-        gain.connect(master);
-        osc.start();
-        ambientNodes.push({ source: osc, gain, master });
-      }
-
-      if (name === 'Fireplace' || name === 'Campfire') {
-        const noise = createNoiseBuffer(ctx, 0.2);
-        const source = ctx.createBufferSource();
-        source.buffer = noise;
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'bandpass';
-        filter.frequency.value = 300;
-        filter.Q.value = 0.3;
-        const gain = ctx.createGain();
-        gain.gain.value = 0.025;
-        source.connect(filter);
-        filter.connect(gain);
-        gain.connect(master);
-        source.loop = true;
-        source.start();
-        ambientNodes.push({ source, gain, master });
-      }
-
-      if (name === 'Fan' || name === 'Desk') {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sawtooth';
-        osc.frequency.value = 80;
-        gain.gain.value = 0.015;
-        osc.connect(gain);
-        gain.connect(master);
-        osc.start();
-        ambientNodes.push({ source: osc, gain, master });
-      }
-
-      if (name === 'Thunder' || name === 'Storm') {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'square';
-        osc.frequency.value = 55;
-        gain.gain.value = 0.018;
-        osc.connect(gain);
-        gain.connect(master);
-        osc.start();
-        ambientNodes.push({ source: osc, gain, master });
-      }
-
-      if (name === 'Piano' || name === 'Moonlight') {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = 330;
-        gain.gain.value = 0.02;
-        osc.connect(gain);
-        gain.connect(master);
-        osc.start();
-        ambientNodes.push({ source: osc, gain, master });
-      }
-
-      if (name === 'Breeze' || name === 'Wind' || name === 'Harbor') {
-        const noise = createNoiseBuffer(ctx, 0.2);
-        const source = ctx.createBufferSource();
-        source.buffer = noise;
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'highpass';
-        filter.frequency.value = 220;
-        const gain = ctx.createGain();
-        gain.gain.value = 0.012;
-        source.connect(filter);
-        filter.connect(gain);
-        gain.connect(master);
-        source.loop = true;
-        source.start();
-        ambientNodes.push({ source, gain, master });
-      }
-
-      if (name === 'Night' || name === 'Aurora' || name === 'Hush') {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = 180;
-        gain.gain.value = 0.015;
-        osc.connect(gain);
-        gain.connect(master);
-        osc.start();
-        ambientNodes.push({ source: osc, gain, master });
-      }
-
-      if (name === 'River' || name === 'Stream') {
-        const noise = createNoiseBuffer(ctx, 0.2);
-        const source = ctx.createBufferSource();
-        source.buffer = noise;
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = 600;
-        const gain = ctx.createGain();
-        gain.gain.value = 0.016;
-        source.connect(filter);
-        filter.connect(gain);
-        gain.connect(master);
-        source.loop = true;
-        source.start();
-        ambientNodes.push({ source, gain, master });
-      }
-
-      if (name === 'Train') {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'square';
-        osc.frequency.value = 90;
-        gain.gain.value = 0.015;
-        osc.connect(gain);
-        gain.connect(master);
-        osc.start();
-        ambientNodes.push({ source: osc, gain, master });
-      }
-
-      if (name === 'Chimes') {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.value = 740;
-        gain.gain.value = 0.018;
-        osc.connect(gain);
-        gain.connect(master);
-        osc.start();
-        ambientNodes.push({ source: osc, gain, master });
-      }
-
-      if (name === 'Drone') {
-        const osc = ctx.createOsculator();
-        const gain = ctx.createGain();
-        osc.type = 'sawtooth';
-        osc.frequency.value = 140;
-        gain.gain.value = 0.02;
-        osc.connect(gain);
-        gain.connect(master);
-        osc.start();
-        ambientNodes.push({ source: osc, gain, master });
-      }
-    },
-    stop() {
-      ambientNodes.forEach(({ source, gain, master, lfo, lfoGain }) => {
-        if (source) source.stop();
-        if (gain) gain.disconnect();
-        if (master) master.disconnect();
-        if (lfo) lfo.stop();
-        if (lfoGain) lfoGain.disconnect();
-      });
-      ambientNodes = [];
-      if (ambientAudioCtx) {
-        ambientAudioCtx.close();
-        ambientAudioCtx = null;
-      }
-    }
-  };
-}
-
-function createNoiseBuffer(ctx, duration) {
-  const buffer = ctx.createBuffer(1, ctx.sampleRate * duration, ctx.sampleRate);
-  const output = buffer.getChannelData(0);
-  for (let i = 0; i < output.length; i += 1) {
-    output[i] = (Math.random() * 2 - 1) * 0.1;
-  }
-  return buffer;
-}
-
-function renderAmbientButtons() {
-  ambientListEl.innerHTML = '';
-  ambientPatterns.forEach((name) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `ambient-item${ambientName === name ? ' active' : ''}`;
-    button.textContent = name;
-    button.addEventListener('click', () => {
-      if (ambientName === name) {
-        ambientName = '';
-        button.classList.remove('active');
-        stopAmbient();
-        return;
-      }
-      ambientName = name;
-      renderAmbientButtons();
-      startAmbient(name);
-    });
-    ambientListEl.appendChild(button);
-  });
-}
-
-function stopAmbient() {
-  ambientNodes.forEach(({ source, gain, master, lfo, lfoGain }) => {
-    try {
-      if (source) source.stop();
-    } catch {}
-    if (gain) gain.disconnect();
-    if (master) master.disconnect();
-    if (lfo) lfo.stop();
-    if (lfoGain) lfoGain.disconnect();
-  });
-  ambientNodes = [];
-  if (ambientAudioCtx) {
-    ambientAudioCtx.close();
-    ambientAudioCtx = null;
-  }
-}
-
-function startAmbient(name) {
-  stopAmbient();
-  const settings = readSettings();
-  settings.ambientSound = name;
-  saveSettings(settings);
-
-  const AudioCtor = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtor) {
-    showToast('Ambient audio is not supported in this browser.');
-    return;
-  }
-
-  ambientAudioCtx = new AudioCtor();
-  const master = ambientAudioCtx.createGain();
-  master.gain.value = Number(ambientVolumeInput.value) / 100 * 0.25;
-  master.connect(ambientAudioCtx.destination);
-
-  const noiseBuffer = createNoiseBuffer(ambientAudioCtx, 2);
-  const source = ambientAudioCtx.createBufferSource();
-  source.buffer = noiseBuffer;
-  source.loop = true;
-
-  const filter = ambientAudioCtx.createBiquadFilter();
-  filter.type = 'lowpass';
-  filter.frequency.value = 800;
-
-  const gain = ambientAudioCtx.createGain();
-  gain.gain.value = 0.02;
-
-  source.connect(filter);
-  filter.connect(gain);
-  gain.connect(master);
-  source.start();
-  ambientNodes.push({ source, gain, master });
-
-  if (name === 'Rain') {
-    filter.frequency.value = 1000;
-    gain.gain.value = 0.025;
-  }
-  if (name === 'Forest') {
-    const osc = ambientAudioCtx.createOscillator();
-    osc.type = 'triangle';
-    osc.frequency.value = 180;
-    const oscGain = ambientAudioCtx.createGain();
-    oscGain.gain.value = 0.018;
-    osc.connect(oscGain);
-    oscGain.connect(master);
-    osc.start();
-    ambientNodes.push({ source: osc, gain: oscGain, master });
-  }
-  if (name === 'Fan') {
-    const osc = ambientAudioCtx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.value = 70;
-    const oscGain = ambientAudioCtx.createGain();
-    oscGain.gain.value = 0.015;
-    osc.connect(oscGain);
-    oscGain.connect(master);
-    osc.start();
-    ambientNodes.push({ source: osc, gain: oscGain, master });
-  }
-  if (name === 'Ocean' || name === 'Waves') {
-    const osc = ambientAudioCtx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = 90;
-    const oscGain = ambientAudioCtx.createGain();
-    oscGain.gain.value = 0.02;
-    osc.connect(oscGain);
-    oscGain.connect(master);
-    osc.start();
-    ambientNodes.push({ source: osc, gain: oscGain, master });
-  }
-  if (name === 'Thunder' || name === 'Storm') {
-    const osc = ambientAudioCtx.createOscillator();
-    osc.type = 'square';
-    osc.frequency.value = 60;
-    const oscGain = ambientAudioCtx.createGain();
-    oscGain.gain.value = 0.022;
-    osc.connect(oscGain);
-    oscGain.connect(master);
-    osc.start();
-    ambientNodes.push({ source: osc, gain: oscGain, master });
-  }
-}
-
-function exportNote(format = 'txt') {
-  const text = editor.value || 'Start writing...';
-
-  if (format === 'txt') {
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    downloadBlob(blob, 'note.txt');
-    showToast('TXT exported');
-    return;
-  }
-
-  if (format === 'html') {
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Note</title></head><body>${text.replace(/\n/g, '<br>')}</body></html>`;
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    downloadBlob(blob, 'note.html');
-    showToast('HTML exported');
-    return;
-  }
-
-  if (format === 'pdf') {
-    const pdf = new jsPDF();
-    const lines = pdf.splitTextToSize(text || 'Start writing...', 180);
-    pdf.text(lines, 14, 20);
-    pdf.save('note.pdf');
-    showToast('PDF exported');
-    return;
-  }
-
-  if (format === 'docx') {
-    const doc = new Document({
-      sections: [{
-        children: [
-          new Paragraph({
-            children: [new TextRun({ text: text || 'Start writing...', break: 1 })]
-          })
-        ]
-      }]
-    });
-
-    Packer.toBlob(doc).then((blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'note.docx';
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast('DOCX exported');
-    });
-  }
-}
-
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
-function bindEvents() {
-  editor.addEventListener('input', () => {
-    updateStats();
-    saveCurrentNote();
-  });
-
-  editor.addEventListener('keydown', (event) => {
-    saveNoteWithShortcut(event);
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'b') {
-      event.preventDefault();
-      toggleDarkMode();
-    }
-    if (readSettings().typewriterSound) {
-      const allowed = ['Backspace', 'Enter', ' ', 'Tab'];
-      if (event.key.length === 1 || allowed.includes(event.key)) {
-        playTypewriterTone();
-      }
-    }
-  });
-
-  saveNoteBtn.addEventListener('click', saveCurrentNote);
-  themeToggle.addEventListener('click', toggleDarkMode);
-  fullscreenBtn.addEventListener('click', toggleFullScreen);
-  floatWindowBtn.addEventListener('click', openFloatingNoteWindow);
-  toggleFocusBtn.addEventListener('click', toggleFocusMode);
-  downloadBtn.addEventListener('click', () => exportNote('pdf'));
-  document.querySelector('#export-text').addEventListener('click', () => exportNote('txt'));
-  document.querySelector('#export-html').addEventListener('click', () => exportNote('html'));
-  document.querySelector('#export-pdf').addEventListener('click', () => exportNote('pdf'));
-  document.querySelector('#export-docx').addEventListener('click', () => exportNote('docx'));
-
-  saveSnapshotBtn.addEventListener('click', saveSnapshot);
-  snapshotListEl.addEventListener('click', (event) => {
-    const restoreTarget = event.target.closest('[data-restore]');
-    const deleteTarget = event.target.closest('[data-delete]');
-    if (restoreTarget) restoreSnapshot(restoreTarget.dataset.restore);
-    if (deleteTarget) deleteSnapshot(deleteTarget.dataset.delete);
-  });
-
-  startTimerBtn.addEventListener('click', startTimer);
-  pauseTimerBtn.addEventListener('click', pauseTimer);
-  resetTimerBtn.addEventListener('click', resetTimer);
-
-  breakToggle.addEventListener('change', () => {
-    breakReminderEnabled = breakToggle.checked;
-    const settings = readSettings();
-    settings.breakReminder = breakReminderEnabled;
-    saveSettings(settings);
-    showToast(breakReminderEnabled ? 'Break reminders on' : 'Break reminders off');
-  });
-
-  typewriterToggle.addEventListener('change', () => {
-    const settings = readSettings();
-    settings.typewriterSound = typewriterToggle.checked;
-    saveSettings(settings);
-    showToast(settings.typewriterSound ? 'Typewriter sound on' : 'Typewriter sound off');
-  });
-
-  ambientVolumeInput.addEventListener('input', () => {
-    const settings = readSettings();
-    settings.ambientVolume = Number(ambientVolumeInput.value);
-    saveSettings(settings);
-    if (ambientName) {
-      startAmbient(ambientName);
-    }
-  });
-
-  ambientStopBtn.addEventListener('click', () => {
-    ambientName = '';
-    stopAmbient();
-    renderAmbientButtons();
-  });
-
-  window.addEventListener('beforeinstallprompt', (event) => {
-    event.preventDefault();
-    installPromptEvent = event;
-    installBtn.classList.remove('hidden');
-  });
-
-  installBtn.addEventListener('click', async () => {
-    if (!installPromptEvent) return;
-    installPromptEvent.prompt();
-    await installPromptEvent.userChoice;
-    installBtn.classList.add('hidden');
-  });
-
-  window.addEventListener('keydown', saveNoteWithShortcut);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') saveCurrentNote();
-  });
-}
-
-function bootstrap() {
-  loadCurrentNote();
-  renderSnapshots();
-  updateTimerDisplay();
-  applySettingsOnLoad();
-  renderAmbientButtons();
-  bindEvents();
-  if (readSettings().ambientSound) {
-    ambientName = readSettings().ambientSound;
-    startAmbient(ambientName);
-  }
-}
-
-bootstrap();
-
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
-  });
 }

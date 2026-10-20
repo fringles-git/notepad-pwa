@@ -2,18 +2,15 @@
 
 A lightweight, privacy-first, offline-capable notepad built as a Progressive Web App.
 
-Features include:
-
-- Real-time autosave to localStorage
-- Dark mode and focus mode
-- Installable PWA for offline use and home screen launch on supported devices
-- Writing timer and break reminders
-- Snapshot history for quick note recovery
-- Typewriter sound toggle
-- Ambient sound generator for focus sessions
-- Full-screen and floating window support
-- Download notes as TXT, HTML, PDF, and DOCX
-- Keyboard shortcuts for navigation and saving
+Features:
+- real-time autosave
+- dark mode and focus mode
+- installable PWA support
+- timer and break reminders
+- snapshots and note statistics
+- ambient sound controls
+- export as TXT, HTML, PDF, and DOCX
+- floating window and fullscreen writing modes
 
 ## Local development
 
@@ -30,10 +27,9 @@ npm run build
 
 ## Notes
 
-This app stores notes in the browser using localStorage. For backup safety, use the download actions or keyboard shortcut `Ctrl/Cmd + S`.
-
-The project intentionally avoids collecting user data and keeps all note storage on-device.
+This app stores notes in browser localStorage. Please download backups regularly via the export buttons or `Ctrl/Cmd + S`.
 
 ## License
 
 MIT
+
