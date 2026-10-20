@@ -1,0 +1,18 @@
+{
+  "name": "notepad-pwa",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "docx": "^8.5.0",
+    "jspdf": "^2.5.1"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}
