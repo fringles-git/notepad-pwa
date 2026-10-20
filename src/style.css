@@ -4,8 +4,14 @@ import { Document, Packer, Paragraph, TextRun } from 'docx';
 const NOTES_KEY = 'notepad-pwa-note';
 const SETTINGS_KEY = 'notepad-pwa-settings';
 const SNAPSHOTS_KEY = 'notepad-pwa-snapshots';
+const NOTE_LIBRARY_KEY = 'notepad-pwa-library';
+const CURRENT_NOTE_ID_KEY = 'notepad-pwa-current-note-id';
 
 const editor = document.querySelector('#editor');
+const noteTitleInput = document.querySelector('#note-title');
+const noteSearchInput = document.querySelector('#note-search');
+const noteListEl = document.querySelector('#note-list');
+const newNoteBtn = document.querySelector('#new-note');
 const wordCountEl = document.querySelector('#word-count');
 const charCountEl = document.querySelector('#char-count');
 const paragraphCountEl = document.querySelector('#paragraph-count');
@@ -41,6 +47,7 @@ let ambientNodes = [];
 let userTheme = 'dark';
 let typewriterEnabled = false;
 let breakReminderEnabled = false;
+let currentNoteId = null;
 
 const ambientPatterns = ['Rain', 'Waves', 'Forest', 'Cafe', 'Fireplace', 'Fan', 'Storm', 'Piano'];
 
@@ -49,15 +56,6 @@ function showToast(message) {
   toastEl.classList.add('show');
   clearTimeout(showToast.timeoutId);
   showToast.timeoutId = setTimeout(() => toastEl.classList.remove('show'), 2200);
-}
-
-function readSettings() {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    return raw ? { ...defaultSettings(), ...JSON.parse(raw) } : defaultSettings();
-  } catch {
-    return defaultSettings();
-  }
 }
 
 function defaultSettings() {
@@ -71,25 +69,150 @@ function defaultSettings() {
   };
 }
 
+function readSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    return raw ? { ...defaultSettings(), ...JSON.parse(raw) } : defaultSettings();
+  } catch {
+    return defaultSettings();
+  }
+}
+
 function saveSettings(settings) {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
-function loadNote() {
-  const note = localStorage.getItem(NOTES_KEY) ?? '';
-  editor.value = note;
-  updateStats();
-  updateSavedStatus();
+function getLibraryNotes() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(NOTE_LIBRARY_KEY) ?? '[]');
+    return Array.isArray(raw) ? raw : [];
+  } catch {
+    return [];
+  }
 }
 
-function saveNote() {
-  localStorage.setItem(NOTES_KEY, editor.value);
-  updateSavedStatus();
+function saveLibraryNotes(notes) {
+  localStorage.setItem(NOTE_LIBRARY_KEY, JSON.stringify(notes));
+}
+
+function titleFromContent(content) {
+  const trimmed = content.trim();
+  if (!trimmed) return 'Untitled note';
+  const firstLine = trimmed.split(/\n/)[0].trim();
+  return firstLine.length > 40 ? `${firstLine.slice(0, 37)}...` : firstLine;
 }
 
 function updateSavedStatus() {
   const now = new Date();
   savedStatusEl.textContent = `Saved ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function persistCurrentNote() {
+  const content = editor.value;
+  localStorage.setItem(NOTES_KEY, content);
+
+  const title = noteTitleInput.value.trim() || titleFromContent(content);
+  if (!currentNoteId) {
+    currentNoteId = `note-${Date.now()}`;
+    localStorage.setItem(CURRENT_NOTE_ID_KEY, currentNoteId);
+  }
+
+  const notes = getLibraryNotes();
+  const existingIndex = notes.findIndex((entry) => entry.id === currentNoteId);
+  const item = {
+    id: currentNoteId,
+    title,
+    content,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (existingIndex >= 0) {
+    notes.splice(existingIndex, 1, item);
+  } else {
+    notes.unshift(item);
+  }
+
+  saveLibraryNotes(notes.slice(0, 24));
+  renderNoteList();
+  updateSavedStatus();
+}
+
+function loadNote() {
+  const savedText = localStorage.getItem(NOTES_KEY) ?? '';
+  currentNoteId = localStorage.getItem(CURRENT_NOTE_ID_KEY) ?? null;
+  editor.value = savedText;
+  const libraryNotes = getLibraryNotes();
+  const current = libraryNotes.find((entry) => entry.id === currentNoteId);
+  if (current) {
+    noteTitleInput.value = current.title || 'Untitled note';
+  } else if (savedText) {
+    noteTitleInput.value = titleFromContent(savedText);
+  } else {
+    noteTitleInput.value = 'Untitled note';
+  }
+  updateStats();
+  updateSavedStatus();
+  renderNoteList();
+}
+
+function newNote() {
+  currentNoteId = null;
+  localStorage.removeItem(CURRENT_NOTE_ID_KEY);
+  noteTitleInput.value = 'Untitled note';
+  editor.value = '';
+  updateStats();
+  updateSavedStatus();
+  renderNoteList();
+}
+
+function renderNoteList() {
+  const items = getLibraryNotes();
+  const query = noteSearchInput.value.trim().toLowerCase();
+  const filtered = items.filter((entry) => {
+    if (!query) return true;
+    return `${entry.title} ${entry.content}`.toLowerCase().includes(query);
+  });
+
+  noteListEl.innerHTML = '';
+
+  if (!filtered.length) {
+    noteListEl.innerHTML = '<div class="note-item empty"><strong>No matching notes</strong></div>';
+    return;
+  }
+
+  filtered.forEach((entry) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = `note-item${entry.id === currentNoteId ? ' active' : ''}`;
+    item.dataset.noteId = entry.id;
+    item.innerHTML = `
+      <strong>${escapeHtml(entry.title || 'Untitled note')}</strong>
+      <small>${new Date(entry.updatedAt || Date.now()).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</small>
+      <span>${escapeHtml((entry.content || '').slice(0, 52).replace(/\n/g, ' '))}</span>
+    `;
+    noteListEl.appendChild(item);
+  });
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function openNoteFromList(noteId) {
+  const entry = getLibraryNotes().find((item) => item.id === noteId);
+  if (!entry) return;
+  currentNoteId = noteId;
+  localStorage.setItem(CURRENT_NOTE_ID_KEY, noteId);
+  editor.value = entry.content || '';
+  noteTitleInput.value = entry.title || 'Untitled note';
+  updateStats();
+  updateSavedStatus();
+  renderNoteList();
 }
 
 function updateStats() {
@@ -217,7 +340,12 @@ function restoreSnapshot(id) {
   const found = getSnapshots().find((entry) => entry.id === id);
   if (!found) return;
   editor.value = found.content;
-  saveNote();
+  noteTitleInput.value = titleFromContent(found.content);
+  if (!currentNoteId) {
+    currentNoteId = `note-${Date.now()}`;
+    localStorage.setItem(CURRENT_NOTE_ID_KEY, currentNoteId);
+  }
+  persistCurrentNote();
   updateStats();
   showToast('Snapshot restored');
 }
@@ -266,11 +394,11 @@ function triggerTypewriterTone() {
 
 function createNoiseBuffer(ctx, durationSeconds) {
   const sampleRate = ctx.sampleRate;
-  const frameCount = sampleRate * durationSeconds;
-  const buffer = ctx.createBuffer(1, frameCount, sampleRate);
+  const numberOfFrames = sampleRate * durationSeconds;
+  const buffer = ctx.createBuffer(1, numberOfFrames, sampleRate);
   const channel = buffer.getChannelData(0);
 
-  for (let i = 0; i < frameCount; i += 1) {
+  for (let i = 0; i < numberOfFrames; i += 1) {
     channel[i] = (Math.random() * 2 - 1) * 0.12;
   }
 
@@ -557,7 +685,7 @@ function handleKeyboardShortcuts(event) {
 
   if (modifier && key === 's') {
     event.preventDefault();
-    saveNote();
+    persistCurrentNote();
     showToast('Saved locally');
   }
 
@@ -593,7 +721,15 @@ function initInstallPrompt() {
 function initListeners() {
   editor.addEventListener('input', () => {
     updateStats();
-    saveNote();
+    persistCurrentNote();
+  });
+
+  noteTitleInput.addEventListener('input', () => {
+    const title = noteTitleInput.value.trim();
+    if (!title) {
+      noteTitleInput.value = 'Untitled note';
+    }
+    persistCurrentNote();
   });
 
   editor.addEventListener('keydown', (event) => {
@@ -604,8 +740,16 @@ function initListeners() {
     }
   });
 
+  newNoteBtn.addEventListener('click', newNote);
+  noteSearchInput.addEventListener('input', renderNoteList);
+  noteListEl.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-note-id]');
+    if (!button) return;
+    openNoteFromList(button.dataset.noteId);
+  });
+
   saveNoteBtn.addEventListener('click', () => {
-    saveNote();
+    persistCurrentNote();
     showToast('Saved locally');
   });
 
@@ -640,7 +784,7 @@ function initListeners() {
 
   window.addEventListener('keydown', handleKeyboardShortcuts);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') saveNote();
+    if (document.visibilityState === 'hidden') persistCurrentNote();
   });
 }
 

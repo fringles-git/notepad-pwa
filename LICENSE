@@ -10,6 +10,7 @@ Features:
 - snapshots and note statistics
 - ambient sound controls
 - export as TXT, HTML, PDF, and DOCX
+- note search and local library management
 - floating window and fullscreen writing modes
 
 ## Local development
@@ -32,4 +33,3 @@ This app stores notes in browser localStorage. Please download backups regularly
 ## License
 
 MIT
-

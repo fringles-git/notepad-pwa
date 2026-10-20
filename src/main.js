@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0f172a" />
     <meta
       name="description"
-      content="Privacy-first offline notepad with dark mode, snapshots, statistics, export options, and PWA install support."
+      content="Private, offline notepad with focus mode, snapshots, search, and installation support."
     />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f172a'/%3E%3Cpath d='M18 18h28v28H18z' fill='%23f8fafc' fill-opacity='.08'/%3E%3Cpath d='M22 20h20v8H22zm0 10h20v7H22zm0 9h14v5H22z' fill='%23e2e8f0'/%3E%3C/svg%3E" />
@@ -36,6 +36,18 @@
             <li><span>Reading time</span><strong id="reading-time">0 min</strong></li>
             <li><span>Saved</span><strong id="saved-status">Now</strong></li>
           </ul>
+        </section>
+
+        <section class="panel note-manager">
+          <div class="panel-title-row">
+            <h2>Notes</h2>
+            <button id="new-note" class="small-button primary" type="button">New</button>
+          </div>
+          <label class="search-box" for="note-search">
+            <span>Search</span>
+            <input id="note-search" type="search" placeholder="Find a note" />
+          </label>
+          <div id="note-list" class="note-list"></div>
         </section>
 
         <section class="panel timer-panel">
@@ -80,8 +92,12 @@
           </div>
         </header>
 
+        <div class="editor-header">
+          <input id="note-title" type="text" value="Untitled note" aria-label="Note title" />
+        </div>
+
         <div class="editor-wrap">
-          <textarea id="editor" spellcheck="true" aria-label="Notepad editor" placeholder="Start writing here..."></textarea>
+          <textarea id="editor" spellcheck="true" aria-label="Notepad editor" placeholder="Start typing here..."></textarea>
         </div>
       </main>
 
