@@ -8,10 +8,10 @@
       name="description"
       content="Private, offline notepad with focus mode, snapshots, search, and installation support."
     />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f172a'/%3E%3Cpath d='M18 18h28v28H18z' fill='%23f8fafc' fill-opacity='.08'/%3E%3Cpath d='M22 20h20v8H22zm0 10h20v7H22zm0 9h14v5H22z' fill='%23e2e8f0'/%3E%3C/svg%3E" />
     <title>Notepad PWA</title>
-    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>
     <div class="app-shell">
@@ -139,6 +139,6 @@
 
     <div id="toast" class="toast" aria-live="polite"></div>
 
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="./src/main.js"></script>
   </body>
 </html>
